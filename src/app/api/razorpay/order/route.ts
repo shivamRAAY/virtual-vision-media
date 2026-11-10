@@ -9,10 +9,16 @@ export async function POST(req: Request) {
 
     const key_id =
       process.env.RAZORPAY_KEY_ID ||
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-      'rzp_test_Txx2fDCDobMLRr';
-    const key_secret =
-      process.env.RAZORPAY_KEY_SECRET || 'zIUEy2W2M6UqYv0bcDI5bvCE';
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+    const key_secret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!key_id || !key_secret) {
+      console.error('Razorpay credentials missing in environment variables');
+      return NextResponse.json(
+        { error: 'Razorpay keys not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in Vercel settings.' },
+        { status: 500 }
+      );
+    }
 
     const razorpay = new Razorpay({
       key_id,

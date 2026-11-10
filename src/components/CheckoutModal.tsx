@@ -97,8 +97,11 @@ export const CheckoutModal: React.FC = () => {
 
       const activeKey =
         orderData.keyId ||
-        process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-        'rzp_test_Txx2fDCDobMLRr';
+        process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+
+      if (!activeKey) {
+        throw new Error('Razorpay public key is not configured.');
+      }
 
       if (activeKey.startsWith('rzp_test_')) {
         setIsTestMode(true);

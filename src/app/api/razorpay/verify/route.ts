@@ -13,8 +13,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const key_secret =
-      process.env.RAZORPAY_KEY_SECRET || 'zIUEy2W2M6UqYv0bcDI5bvCE';
+    const key_secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!key_secret) {
+      return NextResponse.json(
+        { verified: false, error: 'RAZORPAY_KEY_SECRET is not configured' },
+        { status: 500 }
+      );
+    }
 
     const text = `${razorpay_order_id}|${razorpay_payment_id}`;
     const expectedSignature = crypto

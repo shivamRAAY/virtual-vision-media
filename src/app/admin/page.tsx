@@ -872,8 +872,8 @@ export default function AdminDashboardPage() {
           <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34D399]" />
             <div className="font-mono text-xs">
-              <span className="font-bold text-white block">Razorpay Gateway</span>
-              <span className="text-[10px] text-gray-400">rzp_test_Txx2fDCDobMLRr</span>
+              <span className="font-bold text-white block">Razorpay Live Mode</span>
+              <span className="text-[10px] text-emerald-400">Production Active</span>
             </div>
           </div>
 
@@ -881,7 +881,7 @@ export default function AdminDashboardPage() {
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34D399]" />
             <div className="font-mono text-xs">
               <span className="font-bold text-white block">Resend Email API</span>
-              <span className="text-[10px] text-gray-400">re_6PQhhtzc... Active</span>
+              <span className="text-[10px] text-emerald-400">Production Active</span>
             </div>
           </div>
 
