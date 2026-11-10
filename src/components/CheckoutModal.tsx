@@ -22,6 +22,10 @@ export const CheckoutModal: React.FC = () => {
 
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'netbanking'>('upi');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [isTestMode, setIsTestMode] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  const [emailErrorMessage, setEmailErrorMessage] = useState<string | null>(null);
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -67,11 +71,12 @@ export const CheckoutModal: React.FC = () => {
     }
 
     setIsProcessing(true);
+    setPaymentError(null);
 
     try {
       const isLoaded = await loadRazorpayScript();
       if (!isLoaded) {
-        throw new Error('Razorpay SDK failed to load. Please check your network.');
+        throw new Error('Razorpay Checkout SDK failed to load. Please check your internet connection.');
       }
 
       // 1. Create order on the Next.js backend with Razorpay API
@@ -87,15 +92,23 @@ export const CheckoutModal: React.FC = () => {
 
       const orderData = await res.json();
       if (!orderData.order) {
-        throw new Error(orderData.error || 'Failed to create Razorpay order');
+        throw new Error(orderData.error || 'Failed to initialize payment gateway order');
+      }
+
+      const activeKey =
+        orderData.keyId ||
+        process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+        'rzp_test_Txx2fDCDobMLRr';
+
+      if (activeKey.startsWith('rzp_test_')) {
+        setIsTestMode(true);
+      } else {
+        setIsTestMode(false);
       }
 
       // 2. Open the official Razorpay popup (UPI, Cards, Netbanking)
       const options = {
-        key:
-          orderData.keyId ||
-          process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-          'rzp_test_Txx2fDCDobMLRr',
+        key: activeKey,
         amount: orderData.order.amount,
         currency: orderData.order.currency || 'INR',
         name: 'Virtual Vision Media',
@@ -113,6 +126,7 @@ export const CheckoutModal: React.FC = () => {
         modal: {
           ondismiss: () => {
             setIsProcessing(false);
+            setPaymentError('Payment window was closed before completion. You can retry whenever you are ready.');
             vvmTelemetry.trackFunnelStep('payment_failure', {
               reason: 'Customer dismissed Razorpay window',
               amount: total || 49,
@@ -136,6 +150,7 @@ export const CheckoutModal: React.FC = () => {
 
             const verifyData = await verifyRes.json();
             if (verifyData.verified) {
+              // ONLY COMPLETE ORDER ON CRYPTOGRAPHICALLY VERIFIED SUCCESS
               const newOrder = completeOrder(
                 formData,
                 'UPI / RAZORPAY',
@@ -143,6 +158,7 @@ export const CheckoutModal: React.FC = () => {
               );
               setConfirmedOrder(newOrder);
               setIsProcessing(false);
+              setPaymentError(null);
 
               // Real-time telemetry tracking
               vvmTelemetry.trackFunnelStep('payment_success', {
@@ -154,7 +170,8 @@ export const CheckoutModal: React.FC = () => {
                 customerCity: formData.city,
               });
 
-              // Auto-dispatch confirmation & congratulation email with product buy link
+              // Auto-dispatch confirmation & congratulation email
+              setEmailStatus('sending');
               fetch('/api/email/confirmation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -165,68 +182,80 @@ export const CheckoutModal: React.FC = () => {
                   paymentId: response.razorpay_payment_id,
                   amount: total || 49,
                 }),
-              }).catch(() => {});
+              })
+                .then(async (emailRes) => {
+                  const emailData = await emailRes.json().catch(() => ({}));
+                  if (emailRes.ok && emailData.success) {
+                    setEmailStatus('sent');
+                  } else {
+                    setEmailStatus('failed');
+                    setEmailErrorMessage(emailData.error || 'Resend API key requires domain activation in Vercel');
+                  }
+                })
+                .catch(() => {
+                  setEmailStatus('failed');
+                  setEmailErrorMessage('Network timeout attempting email dispatch');
+                });
 
               // Celebratory confetti
-              confetti({
-                particleCount: 100,
-                spread: 80,
-                origin: { y: 0.6 },
-                colors: ['#6C63FF', '#10B981', '#F59E0B', '#3B82F6'],
-              });
+              try {
+                confetti({
+                  particleCount: 100,
+                  spread: 80,
+                  origin: { y: 0.6 },
+                  colors: ['#6C63FF', '#10B981', '#F59E0B', '#3B82F6'],
+                });
+              } catch {}
             } else {
-              alert('Payment verification failed. Please contact support.');
               setIsProcessing(false);
+              setPaymentError(
+                verifyData.error ||
+                  'Payment signature could not be verified. If funds were debited, contact virtualvisionmed@gmail.com'
+              );
             }
-          } catch (verifyErr) {
+          } catch (verifyErr: any) {
             console.error('Verification error:', verifyErr);
-            const newOrder = completeOrder(
-              formData,
-              'UPI / RAZORPAY',
-              response.razorpay_payment_id
-            );
-            setConfirmedOrder(newOrder);
             setIsProcessing(false);
+            setPaymentError(
+              `Verification network error. If your bank account was debited, please email virtualvisionmed@gmail.com with Payment ID: ${response.razorpay_payment_id}`
+            );
           }
         },
       };
 
       const razorpayInstance = new (window as any).Razorpay(options);
       razorpayInstance.on('payment.failed', function (resp: any) {
+        setIsProcessing(false);
+        const reason =
+          resp.error?.description ||
+          resp.error?.reason ||
+          'Transaction declined by UPI App or issuing bank.';
+        setPaymentError(`Payment Failed: ${reason} (No funds were debited).`);
+
         vvmTelemetry.trackFunnelStep('payment_failure', {
-          reason: resp.error?.description || 'Transaction declined by bank or UPI app',
+          reason,
           amount: total || 49,
           customerName: formData.name,
           customerEmail: formData.email,
         });
-        alert(
-          `Payment failed: ${resp.error?.description || 'Please try another payment method.'}`
-        );
-        setIsProcessing(false);
       });
+
       razorpayInstance.open();
     } catch (err: any) {
-      console.warn('Razorpay gateway fallback activated:', err);
-      // Graceful fallback for offline / test mock
-      setTimeout(() => {
-        const paymentId = `pay_rzp_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-        const newOrder = completeOrder(formData, paymentMethod.toUpperCase(), paymentId);
-        setConfirmedOrder(newOrder);
-        setIsProcessing(false);
-
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#6C63FF', '#10B981', '#F59E0B', '#3B82F6'],
-        });
-      }, 1000);
+      console.error('Razorpay initialization error:', err);
+      setIsProcessing(false);
+      setPaymentError(
+        err?.message ||
+          'Unable to initialize Razorpay payment gateway. Please check your network or try again in a moment.'
+      );
     }
   };
 
   const handleClose = () => {
     setIsCheckoutOpen(false);
     setConfirmedOrder(null);
+    setPaymentError(null);
+    setIsProcessing(false);
   };
 
   return (
@@ -337,8 +366,35 @@ export const CheckoutModal: React.FC = () => {
                 </Link>
               </div>
 
+              {/* Email Delivery Notification Banner */}
+              <div className="pt-2">
+                {emailStatus === 'sent' && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>Official confirmation receipt &amp; license dispatched to your inbox!</span>
+                  </div>
+                )}
+                {emailStatus === 'sending' && (
+                  <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-800 text-xs font-mono flex items-center gap-2">
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-purple-400 border-t-purple-700 animate-spin flex-shrink-0" />
+                    <span>Dispatching confirmation email to {confirmedOrder.customer.email}...</span>
+                  </div>
+                )}
+                {emailStatus === 'failed' && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-mono space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span>⚠️ Note on Email Delivery:</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-amber-800">
+                      Automated email was held ({emailErrorMessage || 'Resend API sandbox'}).
+                      <strong> Your download link above is 100% active and saved in your browser dashboard!</strong>
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <p className="text-[11px] text-center text-vvm-muted font-mono pt-1">
-                Lifetime commercial license • Unrestricted Google Drive streaming & multi-threaded downloads
+                Lifetime commercial license • Unrestricted Google Drive streaming &amp; multi-threaded downloads
               </p>
             </div>
 
@@ -383,6 +439,43 @@ export const CheckoutModal: React.FC = () => {
           /* Checkout Input Form */
           <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
             
+            {/* Payment Error / Decline Alert Box */}
+            {paymentError && (
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-mono space-y-2 animate-fadeIn">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-rose-200 text-rose-700 flex items-center justify-center font-bold flex-shrink-0 mt-0.5">
+                    !
+                  </div>
+                  <div className="space-y-1">
+                    <div className="font-bold text-rose-800">Payment Unsuccessful</div>
+                    <p className="text-[11px] leading-relaxed text-rose-700">
+                      {paymentError}
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-1.5 border-t border-rose-200/60 flex items-center justify-between text-[10px] text-rose-600">
+                  <span>No money was charged to your account.</span>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentError(null)}
+                    className="underline font-bold hover:text-rose-900 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Test Mode Notice Banner */}
+            {isTestMode && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-mono flex items-start gap-2">
+                <span className="font-bold flex-shrink-0">⚠️ Test Mode:</span>
+                <span>
+                  Using Razorpay test key (<code>rzp_test_...</code>). Real UPI apps (GPay, PhonePe, Paytm) will decline test payments. Add <code>RAZORPAY_KEY_ID</code> with your live key (<code>rzp_live_...</code>) in Vercel to receive real payments.
+                </span>
+              </div>
+            )}
+
             {/* Customer Details */}
             <div className="space-y-3">
               <h4 className="text-xs font-mono uppercase tracking-wider text-vvm-muted">

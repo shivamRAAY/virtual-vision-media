@@ -34,8 +34,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ order, keyId: key_id });
   } catch (error: any) {
     console.error('Razorpay order creation error:', error);
+    const errorMsg =
+      error?.error?.description ||
+      error?.message ||
+      'Failed to create Razorpay order. Check your Razorpay Key ID and Secret.';
     return NextResponse.json(
-      { error: error?.message || 'Failed to create Razorpay order' },
+      { error: errorMsg },
       { status: 500 }
     );
   }

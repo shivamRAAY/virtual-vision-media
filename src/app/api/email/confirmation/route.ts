@@ -136,44 +136,65 @@ export async function POST(req: Request) {
     `;
 
     // 1. Deliver via Official Resend REST API (zero npm dependencies, native fetch)
-    const resendApiKey =
-      process.env.RESEND_API_KEY || 're_6PQhhtzc_95r8tb2FV1EPMx3sakidkXf8';
-    let resendResult: any = null;
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const fromEmail = process.env.RESEND_FROM || 'Virtual Vision Media <onboarding@resend.dev>';
 
-    if (resendApiKey) {
-      try {
-        const fromEmail =
-          process.env.RESEND_FROM ||
-          'Virtual Vision Media <onboarding@resend.dev>';
-
-        const response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: fromEmail,
-            to: [email],
-            subject: `🎉 Congratulations ${name}! Your 100GB Video Editor Vault is Ready (Order #${orderId})`,
-            html: htmlEmail,
-          }),
-        });
-
-        resendResult = await response.json();
-        console.log('[Resend API Result]:', resendResult);
-      } catch (err: any) {
-        console.warn('[Resend API Error]:', err?.message || err);
-      }
+    if (!resendApiKey) {
+      console.warn('[Resend API]: RESEND_API_KEY is not defined in environment variables.');
+      return NextResponse.json({
+        success: false,
+        error: 'RESEND_API_KEY is not configured in Vercel environment variables. Please add your Resend API key.',
+        recipient: email,
+        orderId,
+      }, { status: 400 });
     }
 
-    return NextResponse.json({
-      success: true,
-      recipient: email,
-      orderId,
-      resendResult,
-      message: `Congratulatory email and download access link dispatched to ${email}`,
-    });
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [email],
+          subject: `🎉 Congratulations ${name}! Your 100GB Video Editor Vault is Ready (Order #${orderId})`,
+          html: htmlEmail,
+        }),
+      });
+
+      const resendResult = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        console.warn('[Resend API Error]:', resendResult);
+        return NextResponse.json({
+          success: false,
+          error: resendResult?.message || `Resend error (${response.status})`,
+          statusCode: response.status,
+          resendResult,
+          recipient: email,
+          orderId,
+        }, { status: 400 });
+      }
+
+      console.log('[Resend API Success]:', resendResult);
+      return NextResponse.json({
+        success: true,
+        recipient: email,
+        orderId,
+        resendResult,
+        message: `Congratulatory email and download access link dispatched to ${email}`,
+      });
+    } catch (fetchErr: any) {
+      console.warn('[Resend API Fetch Error]:', fetchErr);
+      return NextResponse.json({
+        success: false,
+        error: fetchErr?.message || 'Network error reaching Resend API',
+        recipient: email,
+        orderId,
+      }, { status: 500 });
+    }
   } catch (error: any) {
     console.error('Email dispatch error:', error);
     return NextResponse.json(

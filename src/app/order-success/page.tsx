@@ -41,20 +41,15 @@ export default function OrderSuccessPage() {
   const [copiedMain, setCopiedMain] = useState(false);
   const [copiedFreebie, setCopiedFreebie] = useState(false);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
-  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  const [emailError, setEmailError] = useState<string | null>(null);
 
-  // Retrieve the latest order or fallback
-  const order = currentOrder || orders[0] || {
-    id: `VVM-${Date.now().toString().slice(-6)}-VAULT`,
-    date: new Date().toISOString(),
-    total: 49,
-    customer: { name: 'Valued Creator', email: 'your-email@studio.com' },
-    paymentMethod: 'UPI / Razorpay',
-    downloadToken: `vault_sec_${Date.now()}`,
-    paymentId: `pay_rzp_${Date.now().toString(36).toUpperCase()}`,
-  };
+  // Retrieve the verified order
+  const order = currentOrder || orders[0] || null;
 
   useEffect(() => {
+    if (!order) return;
+
     // Fire celebratory confetti on mount
     try {
       confetti({
@@ -67,6 +62,7 @@ export default function OrderSuccessPage() {
 
     // Auto-dispatch confirmation & congratulatory email
     if (order.customer.email && order.customer.email !== 'your-email@studio.com') {
+      setEmailStatus('sending');
       fetch('/api/email/confirmation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -78,10 +74,54 @@ export default function OrderSuccessPage() {
           amount: order.total || 49,
         }),
       })
-        .then(() => setEmailStatus('sent'))
-        .catch(() => {});
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.success) {
+            setEmailStatus('sent');
+          } else {
+            setEmailStatus('failed');
+            setEmailError(data.error || 'Resend domain activation needed in Vercel');
+          }
+        })
+        .catch(() => {
+          setEmailStatus('failed');
+          setEmailError('Email dispatch timed out');
+        });
     }
   }, [order]);
+
+  // Security gate: If no active order exists, lock access and redirect to store
+  if (!order) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F5] flex items-center justify-center p-4 pt-28 pb-20">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-vvm-border shadow-card text-center space-y-5 animate-fadeIn">
+          <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-600 mx-auto flex items-center justify-center border border-amber-200">
+            <ShieldCheck className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-vvm-text">
+              Verified Order Required
+            </h2>
+            <p className="text-xs text-vvm-muted leading-relaxed">
+              Access to the 100GB Master Video Editor Assets Vault is unlocked automatically after completing your ₹49 order at checkout.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Link
+              href="/store"
+              className="w-full py-3.5 rounded-xl bg-vvm-text hover:bg-black text-white text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors shadow-elevated"
+            >
+              <span>Unlock 100GB Vault (₹49)</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+          <p className="text-[11px] font-mono text-vvm-muted">
+            Already purchased? Check your <Link href="/dashboard" className="underline text-vvm-accent font-semibold">Downloads Dashboard</Link>.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const handleCopyMain = () => {
     navigator.clipboard.writeText(PAID_VAULT_DRIVE_LINK);
@@ -97,8 +137,9 @@ export default function OrderSuccessPage() {
 
   const handleManualResendEmail = async () => {
     setEmailStatus('sending');
+    setEmailError(null);
     try {
-      await fetch('/api/email/confirmation', {
+      const res = await fetch('/api/email/confirmation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -109,10 +150,16 @@ export default function OrderSuccessPage() {
           amount: order.total || 49,
         }),
       });
-      setEmailStatus('sent');
-      setTimeout(() => setEmailStatus('idle'), 4000);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setEmailStatus('sent');
+      } else {
+        setEmailStatus('failed');
+        setEmailError(data.error || 'Resend API sandbox mode or unverified sender domain');
+      }
     } catch {
-      setEmailStatus('idle');
+      setEmailStatus('failed');
+      setEmailError('Network request failed');
     }
   };
 
@@ -369,7 +416,7 @@ export default function OrderSuccessPage() {
               </p>
             </div>
 
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
               <button
                 onClick={handleManualResendEmail}
                 disabled={emailStatus === 'sending'}
@@ -392,6 +439,17 @@ export default function OrderSuccessPage() {
                   </>
                 )}
               </button>
+
+              {emailStatus === 'failed' && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-mono space-y-1">
+                  <p className="font-bold">⚠️ Email Dispatch Notice:</p>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    {emailError || 'Resend API sandbox key requires domain activation in Vercel.'}
+                    <br />
+                    <strong>No worries! Your 100GB Google Drive link is available above and saved in your dashboard.</strong>
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

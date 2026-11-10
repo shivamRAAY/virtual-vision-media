@@ -11,9 +11,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const resendApiKey = process.env.RESEND_API_KEY || 're_6PQhhtzc_95r8tb2FV1EPMx3sakidkXf8';
+    const resendApiKey = process.env.RESEND_API_KEY;
     const fromAddress = process.env.RESEND_FROM || 'Virtual Vision Media <onboarding@resend.dev>';
     const ownerEmail = 'virtualvisionmed@gmail.com';
+
+    if (!resendApiKey) {
+      console.warn('[Contact API]: RESEND_API_KEY is not defined in environment variables.');
+      return NextResponse.json({
+        success: true,
+        message: 'Your inquiry has been received by Virtual Vision Media.',
+        note: 'RESEND_API_KEY is not configured in Vercel.',
+      });
+    }
 
     // Dispatch notification email to studio owner via Resend REST API
     const res = await fetch('https://api.resend.com/emails', {
