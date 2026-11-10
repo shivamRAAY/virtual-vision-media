@@ -25,6 +25,9 @@ export async function POST(req: Request) {
       key_secret,
     });
 
+    const PAID_VAULT_DRIVE_LINK =
+      'https://drive.google.com/drive/folders/1GaOl2Ha0AII8QSIhiuOCyA7380DVfQVl?usp=sharing&mcp_token=eyJwaWQiOjkyNzcyOSwic2lkIjoxNzE2MzIxNjI0LCJheCI6ImViNTQ5YzRiZDJkMjBkMTVkZWUxMGMwNGNlMmJlYTNkIiwidHMiOjE3MzgwNTIxNzgsImV4cCI6MTc0MDQ3MTM3OH0.hJ55soOk95b_4z0GzUsTHEiIs3x7BSqUJ-NlZ8sXnLI';
+
     const options = {
       amount: Math.round(amount * 100), // amount in paise (1 INR = 100 paise)
       currency: 'INR',
@@ -33,6 +36,9 @@ export async function POST(req: Request) {
         product: 'Virtual Vision Media — 100GB Master Video Editor Vault',
         customer_email: body.email || '',
         customer_name: body.name || '',
+        google_drive_vault_link: PAID_VAULT_DRIVE_LINK,
+        permanent_access_dashboard: 'https://virtual-vision-media.vercel.app/dashboard',
+        license: 'Perpetual Lifetime Commercial License',
       },
     };
 

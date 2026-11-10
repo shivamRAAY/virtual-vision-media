@@ -168,6 +168,36 @@ export async function POST(req: Request) {
 
       if (!response.ok) {
         console.warn('[Resend API Error]:', resendResult);
+
+        // Always notify the studio owner at their registered email so you have an immediate record of the sale!
+        try {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${resendApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: fromEmail,
+              to: ['virtualvisionmed@gmail.com'],
+              subject: `🎉 [New Sale Alert] ${name} purchased 100GB Master Vault (Order #${orderId})`,
+              html: `
+                <div style="font-family: -apple-system, sans-serif; padding: 24px; background: #0A0A0C; color: #FFF; border-radius: 16px;">
+                  <h2 style="color: #A78BFA; margin-top: 0;">🎉 New Sale Recorded!</h2>
+                  <p><strong>Customer Name:</strong> ${name}</p>
+                  <p><strong>Customer Email:</strong> <a href="mailto:${email}" style="color: #60A5FA;">${email}</a></p>
+                  <p><strong>Amount Paid:</strong> ₹${amount}</p>
+                  <p><strong>Razorpay Payment ID:</strong> ${paymentId}</p>
+                  <p><strong>Order ID:</strong> ${orderId}</p>
+                  <p><strong>Google Drive Access Link:</strong><br><a href="${PAID_VAULT_DRIVE_LINK}" style="color: #34D399;">${PAID_VAULT_DRIVE_LINK}</a></p>
+                  <hr style="border-color: rgba(255,255,255,0.1); margin: 20px 0;" />
+                  <p style="font-size: 12px; color: #9CA3AF;">Note: Automatic customer delivery to ${email} requires a verified domain at resend.com/domains. The Google Drive link was automatically displayed to the customer on-screen and in Razorpay payment notes.</p>
+                </div>
+              `,
+            }),
+          });
+        } catch {}
+
         return NextResponse.json({
           success: false,
           error: resendResult?.message || `Resend error (${response.status})`,
